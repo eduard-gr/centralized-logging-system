@@ -1,0 +1,164 @@
+unit U_Hlr_Daemon;
+
+interface
+
+
+uses
+  SysUtils,Classes, blcksock, winsock;
+
+type
+  HLRDaemon = class(TThread)
+  private
+    Sock:TTCPBlockSocket;
+  public
+    Constructor Create;
+    Destructor Destroy; override;
+    procedure Execute; override;
+  end;
+
+  TTCPEchoThrd = class(TThread)
+  private
+    Sock:TTCPBlockSocket;
+    CSock: TSocket;
+    function HEXClear(Text:String):string;
+
+  public
+    Constructor Create (hsock:tSocket);
+    procedure Execute; override;
+  end;
+
+var
+  SendBuf : String;
+  Sendd   : String;
+
+implementation
+
+uses
+  Unit1;
+  
+{ TEchoDaemon }
+
+Constructor HLRDaemon.Create;
+begin
+  sock:=TTCPBlockSocket.create;
+  FreeOnTerminate:=true;
+  inherited create(false);
+end;
+
+Destructor HLRDaemon.Destroy;
+begin
+  Sock.free;
+end;
+
+procedure HLRDaemon.Execute;
+var
+  ClientSock:TSocket;
+begin
+  with sock do
+    begin
+      CreateSocket;
+      setLinger(true,10);
+      bind('192.168.200.18','1020');
+      listen;
+      repeat
+
+        if terminated then break;
+
+        if canread(1000) then
+          begin
+            ClientSock:=accept;
+            if lastError=0 then
+            begin
+              TTCPEchoThrd.create(ClientSock);
+            end;
+
+          end;
+      until false;
+    end;
+end;
+
+
+Constructor TTCPEchoThrd.Create(Hsock:TSocket);
+begin
+  Csock := Hsock;
+  FreeOnTerminate:=true;
+  inherited create(false);
+end;
+
+function TTCPEchoThrd.HEXClear(Text:String):string;
+var
+  x : integer;
+  Temp : string;
+begin
+  Temp := '';
+
+  for x := 1 to Length(Text) do
+    if (Text[x] <> #02) and (Text[x] <> #03) and (Text[x] <> #10) and (Text[x] <> #13) then Temp := Temp + Text[x];
+
+  HEXClear := Temp;
+end;
+
+procedure TTCPEchoThrd.Execute;
+var
+  s: string;
+
+  Buf        : array[0..1024] of char;
+  BufPointer : Pointer;
+  x          : integer;
+begin
+  sock := TTCPBlockSocket.create;
+
+  Sock.socket := CSock;
+  sock.GetSins;
+
+  Form1.Memo1.lines.add('Connect');
+
+//send rezult of connection
+
+  if sock.CanWrite(700) then sock.SendString('S0001: Connected'+#10);
+  if sock.lastError <> 0 then Exit;
+
+  with sock do
+  begin
+
+    while not Terminated do
+    begin
+      if CanRead(100) then
+      begin
+        if lastError <> 0 then break;
+        BufPointer := @Buf;
+        RecvBuffer(BufPointer,1);
+        if lastError <> 0 then break;
+
+        if buf[0] = #02 then
+        begin
+
+          //Receve date
+          while not (buf[0] = #03) do
+          begin
+            RecvBuffer(BufPointer,1);
+            s := s  + buf[0];
+          end;
+
+          //Show receved date
+          Form1.Memo1.Lines.Add('Date['+ HEXClear(s) +']');
+          s := '';
+
+          //Send answer
+          SendString('S0001:Operate Success'+#10);
+          if lastError<> 0 then Form1.Memo1.Lines.Add('SendStringError['+IntToStr(lastError)+']'); //
+
+        end;
+
+
+      end;
+    end;
+    Sock.Free;
+    Form1.Memo1.Lines.Add('Diskonekt');
+  end;
+end;
+
+end.
+
+
+
